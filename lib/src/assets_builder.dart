@@ -13,8 +13,6 @@
 // limitations under the License.
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer';
-import 'dart:ffi';
 import 'dart:io';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
@@ -279,12 +277,12 @@ class AssetsBuilder extends Builder {
 
   Future<dynamic> _findAllLocalizationKeysList(
       BuildStep buildStep, YamlMap pubspecYamlMap) async {
-    final folder = 'assets/localizations/vi.json';
+    const folder = 'assets/localizations/vi.json';
     final file = File(folder);
     if (file.existsSync()) {
       final jsonContent = file.readAsStringSync();
       if (jsonContent.isNotEmpty) {
-        dynamic jsonData = jsonDecode(jsonContent);
+        final dynamic jsonData = jsonDecode(jsonContent);
         return jsonData;
       }
     }
@@ -361,7 +359,7 @@ class AssetsBuilder extends Builder {
     final convertedName =
         name // adds preceding _ for capital letters and lowers them
             .replaceAllMapped(RegExp(r'[A-Z]+'),
-                (match) => '_' + match.group(0)!.toLowerCase())
+                (match) => '_${(match.group(0)?.toLowerCase() ?? '')}')
             // replaces all the special characters with _
             .replaceAll(SPECIAL_SYMBOL_REGEX, '_')
             // removes _ in the beginning of the name
@@ -407,7 +405,6 @@ class AssetsBuilder extends Builder {
       assetPathsClass..writeln(ignoreForFile)..writeln('}');
     }
 
-    print("create R class end");
     return assetPathsClass.toString();
   }
 
@@ -531,10 +528,8 @@ class AssetsBuilder extends Builder {
             })
             .map((e) => AssetId('', e.path))
             .toList();
-        print('try to get from director: ${listFiles.length}');
         assets.addAll(listFiles);
       }
-      print("get assets ${assets.length} - ${glob.pattern}");
       assetsSet.addAll(assets);
     }
 
