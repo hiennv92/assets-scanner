@@ -15,6 +15,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as path;
 
 import 'package:build/build.dart';
 import 'package:glob/glob.dart';
@@ -118,6 +119,7 @@ class AssetsBuilder extends Builder {
 
     final rClass =
         await _generateRFileContent(buildStep, pubspecYamlMap!, options);
+    print('create R file done');
     if (rClass.isEmpty) return;
 
     final dir = options.path.startsWith('lib') ? options.path : 'lib';
@@ -130,6 +132,7 @@ class AssetsBuilder extends Builder {
     final assetPathsClass =
         await _createRClass(pubspecYamlMap, buildStep, options);
 
+    print("create R class done");
     final packageAssetPathsClass = _createPackageAssetsClass(pubspecYamlMap);
 
     final hasAnyPaths =
@@ -188,16 +191,22 @@ class AssetsBuilder extends Builder {
       _AssetsScannerOptions options) async {
     final assetPaths =
         await _findAssetIdPathsFromFlutterAssetsList(buildStep, pubspecYamlMap);
+    print('get list assets done');
     final assetPathsClass = StringBuffer();
     if (assetPaths.isNotEmpty) {
+      print("start create R class ${assetPaths.length}");
       // Create default asset paths class.
       assetPathsClass
         ..writeln('class ${options.className} {')
         ..writeln('  static const package = \'${buildStep.inputId.package}\';')
         ..writeln();
+
+      print("start for each");
       for (final assetPath in assetPaths) {
+        print("create property name: $assetPath");
         final propertyName = _createPropertyName(assetPath);
 
+        print("propertyName $propertyName");
         if (propertyName.isNotEmpty) {
           if (!options.ignoreComment) {
             assetPathsClass.writeln('  /// ![](${p.absolute(assetPath)})');
@@ -211,6 +220,7 @@ class AssetsBuilder extends Builder {
       assetPathsClass..writeln(ignoreForFile)..writeln('}');
     }
 
+    print("create R class end");
     return assetPathsClass.toString();
   }
 
@@ -310,7 +320,7 @@ class AssetsBuilder extends Builder {
     final globList = <Glob>{};
     for (final asset in _getAssetsListFromPubspec(pubspecYamlMap)) {
       if (asset.endsWith('/')) {
-        globList.add(Glob('$asset*'));
+        globList.add(Glob('$asset*', recursive: true));
       } else {
         globList.add(Glob(asset));
       }
@@ -326,11 +336,33 @@ class AssetsBuilder extends Builder {
 
     for (final glob in globList) {
       final assets = await buildStep.findAssets(glob).toList();
+      if (assets.isEmpty && glob.pattern.endsWith('/*{,/**}')) {
+        final listFiles = Directory(glob.pattern.replaceAll('*{,/**}', ''))
+            .listSync()
+            .where((file) {
+              return path.extension(file.path).isNotEmpty;
+            })
+            .map((e) => AssetId(pubspecYamlMap['package'] as String, e.path))
+            .toList();
+        print('try to get from director: ${listFiles.length}');
+        assets.addAll(listFiles);
+      }
+      print("get assets ${assets.length} - ${glob.pattern}");
       assetsSet.addAll(assets);
     }
 
     return assetsSet.map((e) => e.path).toList();
   }
+
+  /// checks whether the file is valid file to be included or not
+  /// 1. must be a file, not a directory
+  /// 2. should be from one of the allowed types if specified any
+  // bool _isValidFile(dynamic file) {
+  //   return FileSystemEntity.isFileSync(file.path) &&
+  //       path.extension(file.path).isNotEmpty &&
+  //       (group.types.isEmpty ||
+  //           group.types.contains(path.extension(file.path)));
+  // }
 
   /// Create [_AssetsScannerOptions] from `assets_scanner_options.yaml` file
   _AssetsScannerOptions _getOptions() {
