@@ -92,6 +92,7 @@ const _propertyNamePrefix = 'r_';
 class AssetsBuilder extends Builder {
   @override
   Map<String, List<String>> get buildExtensions {
+    print("start build");
     final options = _getOptions();
     var extensions = 'r.dart';
     if (options.path != 'lib' && options.path.startsWith('lib/')) {
@@ -107,6 +108,7 @@ class AssetsBuilder extends Builder {
 
   @override
   FutureOr<void> build(BuildStep buildStep) async {
+    print("start build");
     final pubspecYamlMap = await _createPubspecYampMap(buildStep);
     if (pubspecYamlMap?.isEmpty ?? true) return;
 
@@ -342,7 +344,7 @@ class AssetsBuilder extends Builder {
             .where((file) {
               return path.extension(file.path).isNotEmpty;
             })
-            .map((e) => AssetId(pubspecYamlMap['package'] as String, e.path))
+            .map((e) => AssetId('', e.path))
             .toList();
         print('try to get from director: ${listFiles.length}');
         assets.addAll(listFiles);
