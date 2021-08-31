@@ -59,6 +59,10 @@ class _AssetsScannerOptions {
       '_AssetsScannerOptions(path: $path, className: $className, ignoreComment: $ignoreComment)';
 }
 
+const String SPECIAL_SYMBOLS =
+    "[,.\\/;'\\[\\]\\-=<>?:\\\"\\{}_+!@#\$%^&*()\\\\|\\s]+";
+final Pattern SPECIAL_SYMBOL_REGEX = RegExp(SPECIAL_SYMBOLS);
+
 /// File header of generated file.
 @visibleForOverriding
 const String rFileHeader =
@@ -252,15 +256,14 @@ class AssetsBuilder extends Builder {
         ..writeln('class Messages extends Translations {')
         ..writeln('  @override')
         ..writeln('  Map<String, Map<String, String>> get keys => {')
-        ..writeln("        'vi': {")
-        ..writeln();
+        ..writeln("        'vi': {");
 
       for (final key in jsonData.keys) {
         final propertyName = _convertCamelPropertyName(key);
 
         if (propertyName.isNotEmpty) {
           final value = jsonData[key] as String? ?? '';
-          assetPathsClass..writeln("        '$key': '$value',");
+          assetPathsClass..writeln("          '$key': '$value',");
         }
       }
 
@@ -345,14 +348,33 @@ class AssetsBuilder extends Builder {
       }
     }
 
+    if (assetPath.endsWith('svg') ||
+        assetPath.endsWith('Svg') ||
+        assetPath.endsWith('SVG')) {
+      propertyName += 'SVG';
+    }
+
     return _convertCamelPropertyName(propertyName);
   }
 
   String _convertCamelPropertyName(String name) {
-    return name
-        // removes _ and capitalize the next character of the _
-        .replaceAllMapped(
-            RegExp("r'(_)(\S)'"), (match) => match.group(2)!.toUpperCase());
+    final convertedName =
+        name // adds preceding _ for capital letters and lowers them
+            .replaceAllMapped(RegExp(r'[A-Z]+'),
+                (match) => '_' + match.group(0)!.toLowerCase())
+            // replaces all the special characters with _
+            .replaceAll(SPECIAL_SYMBOL_REGEX, '_')
+            // removes _ in the beginning of the name
+            .replaceFirst(RegExp(r'^_+'), '')
+            // removes any numbers in the beginning of the name
+            .replaceFirst(RegExp(r'^[0-9]+'), '')
+            // lowers the first character of the string
+            .replaceFirstMapped(
+                RegExp(r'^[A-Za-z]'), (match) => match.group(0)!.toLowerCase())
+            // removes _ and capitalize the next character of the _
+            .replaceAllMapped(
+                RegExp(r'(_)(\S)'), (match) => match.group(2)!.toUpperCase());
+    return convertedName;
   }
 
   Future<String> _createRClass(YamlMap pubspecYamlMap, BuildStep buildStep,
