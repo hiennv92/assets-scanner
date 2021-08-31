@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
+import 'dart:ffi';
 import 'dart:io';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
@@ -23,14 +25,20 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 class _AssetsScannerOptions {
-  const _AssetsScannerOptions._(
-      {this.path = 'lib', this.className = 'R', this.ignoreComment = false});
+  const _AssetsScannerOptions._({
+    this.path = 'lib',
+    this.className = 'R',
+    this.ignoreComment = false,
+    this.localization = 'assets/localizations',
+  });
   factory _AssetsScannerOptions() => const _AssetsScannerOptions._();
   factory _AssetsScannerOptions.fromYamlMap(YamlMap map) {
     return _AssetsScannerOptions._(
         path: map['path'] as String? ?? 'lib',
         className: map['className'] as String? ?? 'R',
-        ignoreComment: map['ignoreComment'] as bool? ?? false);
+        ignoreComment: map['ignoreComment'] as bool? ?? false,
+        localization:
+            map['localizations'] as String? ?? 'assets/localizations');
   }
 
   /// The path where the `r.dart` file locate. Note that the `path` should be
@@ -43,6 +51,8 @@ class _AssetsScannerOptions {
   /// Indicate the comments need to be generated or not. Note that the you can't
   /// preview the images assets if `ignoreComment` is `true`.
   final bool ignoreComment;
+
+  final String localization;
 
   @override
   String toString() =>
@@ -92,7 +102,6 @@ const _propertyNamePrefix = 'r_';
 class AssetsBuilder extends Builder {
   @override
   Map<String, List<String>> get buildExtensions {
-    print("start build");
     final options = _getOptions();
     var extensions = 'r.dart';
     if (options.path != 'lib' && options.path.startsWith('lib/')) {
@@ -102,13 +111,12 @@ class AssetsBuilder extends Builder {
     // match the `build_extensions` in the `build.yaml` file. Need more research see
     // if it's a correct way.
     return {
-      r'$lib$': ['$extensions']
+      r'$lib$': ['$extensions', 'src/locale_keys.dart', 'src/messages.dart']
     };
   }
 
   @override
   FutureOr<void> build(BuildStep buildStep) async {
-    print("start build");
     final pubspecYamlMap = await _createPubspecYampMap(buildStep);
     if (pubspecYamlMap?.isEmpty ?? true) return;
 
@@ -121,12 +129,163 @@ class AssetsBuilder extends Builder {
 
     final rClass =
         await _generateRFileContent(buildStep, pubspecYamlMap!, options);
-    print('create R file done');
-    if (rClass.isEmpty) return;
 
     final dir = options.path.startsWith('lib') ? options.path : 'lib';
     final output = AssetId(buildStep.inputId.package, p.join(dir, 'r.dart'));
-    await buildStep.writeAsString(output, rClass);
+    if (rClass.isNotEmpty) {
+      await buildStep.writeAsString(output, rClass);
+    }
+    final jsonData =
+        await _findAllLocalizationKeysList(buildStep, pubspecYamlMap)
+            as Map<String, dynamic>?;
+
+    final localClass = await _generateLocalizationFileContent(
+        buildStep, pubspecYamlMap, options, jsonData);
+    final localizationsOutput =
+        AssetId(buildStep.inputId.package, p.join(dir, 'locale_keys.dart'));
+    if (localClass.isNotEmpty) {
+      await buildStep.writeAsString(localizationsOutput, localClass);
+    }
+
+    final messagesClass = await _generateMessagesFileContent(
+        buildStep, pubspecYamlMap, options, jsonData);
+    final messagesOutput =
+        AssetId(buildStep.inputId.package, p.join(dir, 'messages.dart'));
+    if (messagesClass.isNotEmpty) {
+      await buildStep.writeAsString(messagesOutput, messagesClass);
+    }
+  }
+
+  Future<String> _generateLocalizationFileContent(
+      BuildStep buildStep,
+      YamlMap pubspecYamlMap,
+      _AssetsScannerOptions options,
+      Map<String, dynamic>? jsonData) async {
+    final localeClass = await _createLocalizationsClass(jsonData);
+    final packageAssetPathsClass = _createPackageAssetsClass(pubspecYamlMap);
+
+    final hasAnyPaths =
+        localeClass.isNotEmpty || packageAssetPathsClass.isNotEmpty;
+    if (!hasAnyPaths) {
+      return '';
+    }
+
+    final rFileContent = StringBuffer();
+    if (hasAnyPaths) {
+      rFileContent.writeln(rFileHeader);
+    }
+    if (localeClass.isNotEmpty) {
+      rFileContent.write(localeClass.toString());
+    }
+    if (packageAssetPathsClass.isNotEmpty) {
+      if (localeClass.isNotEmpty) {
+        rFileContent.writeln();
+      }
+
+      rFileContent.write(packageAssetPathsClass.toString());
+    }
+
+    return rFileContent.toString();
+  }
+
+  Future<String> _createLocalizationsClass(
+      Map<String, dynamic>? jsonData) async {
+    final assetPathsClass = StringBuffer();
+    if (jsonData != null) {
+      // Create default asset paths class.
+      assetPathsClass..writeln('class LocaleKeys {')..writeln();
+
+      for (final key in jsonData.keys) {
+        final propertyName = _convertCamelPropertyName(key);
+
+        if (propertyName.isNotEmpty) {
+          // final value = jsonData[key] as String? ?? '';
+          assetPathsClass..writeln('  static const $propertyName = \'$key\';');
+        }
+      }
+
+      assetPathsClass..writeln(ignoreForFile)..writeln('}');
+    }
+
+    return assetPathsClass.toString();
+  }
+
+  Future<String> _generateMessagesFileContent(
+      BuildStep buildStep,
+      YamlMap pubspecYamlMap,
+      _AssetsScannerOptions options,
+      Map<String, dynamic>? jsonData) async {
+    final localeClass = await _createMessagesClass(jsonData);
+    final packageAssetPathsClass = _createPackageAssetsClass(pubspecYamlMap);
+
+    final hasAnyPaths =
+        localeClass.isNotEmpty || packageAssetPathsClass.isNotEmpty;
+    if (!hasAnyPaths) {
+      return '';
+    }
+
+    final rFileContent = StringBuffer();
+    if (hasAnyPaths) {
+      rFileContent.writeln(rFileHeader);
+    }
+    if (localeClass.isNotEmpty) {
+      rFileContent.write(localeClass.toString());
+    }
+    if (packageAssetPathsClass.isNotEmpty) {
+      if (localeClass.isNotEmpty) {
+        rFileContent.writeln();
+      }
+
+      rFileContent.write(packageAssetPathsClass.toString());
+    }
+
+    return rFileContent.toString();
+  }
+
+  Future<String> _createMessagesClass(Map<String, dynamic>? jsonData) async {
+    final assetPathsClass = StringBuffer();
+    if (jsonData != null) {
+      // Create default asset paths class.
+      assetPathsClass
+        ..writeln("import 'package:get/get.dart';")
+        ..writeln()
+        ..writeln('class Messages extends Translations {')
+        ..writeln('  @override')
+        ..writeln('  Map<String, Map<String, String>> get keys => {')
+        ..writeln("        'vi': {")
+        ..writeln();
+
+      for (final key in jsonData.keys) {
+        final propertyName = _convertCamelPropertyName(key);
+
+        if (propertyName.isNotEmpty) {
+          final value = jsonData[key] as String? ?? '';
+          assetPathsClass..writeln("        '$key': '$value',");
+        }
+      }
+
+      assetPathsClass
+        ..writeln('        },')
+        ..writeln('      };')
+        ..writeln(ignoreForFile)
+        ..writeln('}');
+    }
+
+    return assetPathsClass.toString();
+  }
+
+  Future<dynamic> _findAllLocalizationKeysList(
+      BuildStep buildStep, YamlMap pubspecYamlMap) async {
+    final folder = 'assets/localizations/vi.json';
+    final file = File(folder);
+    if (file.existsSync()) {
+      final jsonContent = file.readAsStringSync();
+      if (jsonContent.isNotEmpty) {
+        dynamic jsonData = jsonDecode(jsonContent);
+        return jsonData;
+      }
+    }
+    return null;
   }
 
   Future<String> _generateRFileContent(BuildStep buildStep,
@@ -186,7 +345,14 @@ class AssetsBuilder extends Builder {
       }
     }
 
-    return propertyName;
+    return _convertCamelPropertyName(propertyName);
+  }
+
+  String _convertCamelPropertyName(String name) {
+    return name
+        // removes _ and capitalize the next character of the _
+        .replaceAllMapped(
+            RegExp("r'(_)(\S)'"), (match) => match.group(2)!.toUpperCase());
   }
 
   Future<String> _createRClass(YamlMap pubspecYamlMap, BuildStep buildStep,
@@ -205,10 +371,7 @@ class AssetsBuilder extends Builder {
 
       print("start for each");
       for (final assetPath in assetPaths) {
-        print("create property name: $assetPath");
         final propertyName = _createPropertyName(assetPath);
-
-        print("propertyName $propertyName");
         if (propertyName.isNotEmpty) {
           if (!options.ignoreComment) {
             assetPathsClass.writeln('  /// ![](${p.absolute(assetPath)})');
