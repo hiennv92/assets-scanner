@@ -195,18 +195,19 @@ class AssetsBuilder extends Builder {
     final assetPathsClass = StringBuffer();
     if (jsonData != null) {
       // Create default asset paths class.
-      assetPathsClass..writeln('class LocaleKeys {')..writeln();
+      assetPathsClass.writeln('class LocaleKeys {');
 
       for (final key in jsonData.keys) {
         final propertyName = _convertCamelPropertyName(key);
 
         if (propertyName.isNotEmpty) {
-          // final value = jsonData[key] as String? ?? '';
-          assetPathsClass..writeln('  static const $propertyName = \'$key\';');
+          assetPathsClass.writeln('  static const $propertyName = \'$key\';');
         }
       }
 
       assetPathsClass..writeln(ignoreForFile)..writeln('}');
+    } else {
+      print("json data not found");
     }
 
     return assetPathsClass.toString();
@@ -261,7 +262,7 @@ class AssetsBuilder extends Builder {
 
         if (propertyName.isNotEmpty) {
           final value = jsonData[key] as String? ?? '';
-          assetPathsClass..writeln("          '$key': '$value',");
+          assetPathsClass..writeln("          '$key': '''$value''',");
         }
       }
 
