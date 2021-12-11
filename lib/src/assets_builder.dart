@@ -198,23 +198,26 @@ class AssetsBuilder extends Builder {
       List<Map<String, dynamic>> jsonList) async {
     final assetPathsClass = StringBuffer();
     if (jsonList.isNotEmpty) {
-      final jsonData = jsonList.first;
-      // Create default asset paths class.
-      assetPathsClass
-        ..writeln()
-        ..writeln('class LocaleKeys {');
+      final json = jsonList.first;
+      if (json.isNotEmpty && json.values.first is Map<String, dynamic>) {
+        final jsonData = json.values.first as Map<String, dynamic>;
+        // Create default asset paths class.
+        assetPathsClass
+          ..writeln()
+          ..writeln('class LocaleKeys {');
 
-      for (final key in jsonData.keys) {
-        final propertyName = _convertCamelPropertyName(key);
+        for (final key in jsonData.keys) {
+          final propertyName = _convertCamelPropertyName(key);
 
-        if (propertyName.isNotEmpty) {
-          assetPathsClass.writeln('  static const $propertyName = \'$key\';');
+          if (propertyName.isNotEmpty) {
+            assetPathsClass.writeln('  static const $propertyName = \'$key\';');
+          }
         }
-      }
 
-      assetPathsClass
-        ..writeln(ignoreForFile)
-        ..writeln('}');
+        assetPathsClass
+          ..writeln(ignoreForFile)
+          ..writeln('}');
+      }
     } else {
       print("json data not found");
     }
