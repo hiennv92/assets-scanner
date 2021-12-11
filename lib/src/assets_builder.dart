@@ -11,15 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+// ignore_for_file: constant_identifier_names
+
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
-import 'package:meta/meta.dart';
-import 'package:path/path.dart' as path;
 
 import 'package:build/build.dart';
 import 'package:glob/glob.dart';
-import 'package:path/path.dart' as p;
+import 'package:meta/meta.dart';
+import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
 class _AssetsScannerOptions {
@@ -133,26 +135,25 @@ class AssetsBuilder extends Builder {
         await _generateRFileContent(buildStep, pubspecYamlMap!, options);
 
     final dir = options.path.startsWith('lib') ? options.path : 'lib';
-    final output = AssetId(buildStep.inputId.package, p.join(dir, 'r.dart'));
+    final output = AssetId(buildStep.inputId.package, path.join(dir, 'r.dart'));
     if (rClass.isNotEmpty) {
       await buildStep.writeAsString(output, rClass);
     }
-    final jsonData =
-        await _findAllLocalizationKeysList(buildStep, pubspecYamlMap)
-            as Map<String, dynamic>?;
+    final jsonList =
+        await _findAllLocalizationKeysList(buildStep, pubspecYamlMap, options);
 
     final localClass = await _generateLocalizationFileContent(
-        buildStep, pubspecYamlMap, options, jsonData);
+        buildStep, pubspecYamlMap, options, jsonList);
     final localizationsOutput =
-        AssetId(buildStep.inputId.package, p.join(dir, 'locale_keys.dart'));
+        AssetId(buildStep.inputId.package, path.join(dir, 'locale_keys.dart'));
     if (localClass.isNotEmpty) {
       await buildStep.writeAsString(localizationsOutput, localClass);
     }
 
     final messagesClass = await _generateMessagesFileContent(
-        buildStep, pubspecYamlMap, options, jsonData);
+        buildStep, pubspecYamlMap, options, jsonList);
     final messagesOutput =
-        AssetId(buildStep.inputId.package, p.join(dir, 'messages.dart'));
+        AssetId(buildStep.inputId.package, path.join(dir, 'messages.dart'));
     if (messagesClass.isNotEmpty) {
       await buildStep.writeAsString(messagesOutput, messagesClass);
     }
@@ -162,7 +163,7 @@ class AssetsBuilder extends Builder {
       BuildStep buildStep,
       YamlMap pubspecYamlMap,
       _AssetsScannerOptions options,
-      Map<String, dynamic>? jsonData) async {
+      List<Map<String, dynamic>> jsonData) async {
     final localeClass = await _createLocalizationsClass(jsonData);
     final packageAssetPathsClass = _createPackageAssetsClass(pubspecYamlMap);
 
@@ -191,21 +192,28 @@ class AssetsBuilder extends Builder {
   }
 
   Future<String> _createLocalizationsClass(
-      Map<String, dynamic>? jsonData) async {
+      List<Map<String, dynamic>> jsonList) async {
     final assetPathsClass = StringBuffer();
-    if (jsonData != null) {
+    if (jsonList.isNotEmpty) {
+      final jsonData = jsonList.first;
       // Create default asset paths class.
-      assetPathsClass.writeln('class LocaleKeys {');
+      assetPathsClass
+        ..writeln("import 'package:get/get.dart';")
+        ..writeln()
+        ..writeln('class LocaleKeys {');
 
       for (final key in jsonData.keys) {
         final propertyName = _convertCamelPropertyName(key);
 
         if (propertyName.isNotEmpty) {
-          assetPathsClass.writeln('  static const $propertyName = \'$key\';');
+          assetPathsClass
+              .writeln('  static const $propertyName = \'$key\'.tr;');
         }
       }
 
-      assetPathsClass..writeln(ignoreForFile)..writeln('}');
+      assetPathsClass
+        ..writeln(ignoreForFile)
+        ..writeln('}');
     } else {
       print("json data not found");
     }
@@ -217,7 +225,7 @@ class AssetsBuilder extends Builder {
       BuildStep buildStep,
       YamlMap pubspecYamlMap,
       _AssetsScannerOptions options,
-      Map<String, dynamic>? jsonData) async {
+      List<Map<String, dynamic>> jsonData) async {
     final localeClass = await _createMessagesClass(jsonData);
     final packageAssetPathsClass = _createPackageAssetsClass(pubspecYamlMap);
 
@@ -245,29 +253,37 @@ class AssetsBuilder extends Builder {
     return rFileContent.toString();
   }
 
-  Future<String> _createMessagesClass(Map<String, dynamic>? jsonData) async {
+  Future<String> _createMessagesClass(
+      List<Map<String, dynamic>> jsonList) async {
     final assetPathsClass = StringBuffer();
-    if (jsonData != null) {
+    if (jsonList.isNotEmpty) {
       // Create default asset paths class.
       assetPathsClass
         ..writeln("import 'package:get/get.dart';")
         ..writeln()
         ..writeln('class Messages extends Translations {')
         ..writeln('  @override')
-        ..writeln('  Map<String, Map<String, String>> get keys => {')
-        ..writeln("        'vi': {");
+        ..writeln('  Map<String, Map<String, String>> get keys => {');
 
-      for (final key in jsonData.keys) {
-        final propertyName = _convertCamelPropertyName(key);
+      for (var json in jsonList) {
+        if (json.isEmpty) continue;
+        final fileKey = json.keys.first;
+        if (!(json[fileKey] is Map<String, dynamic>)) continue;
 
-        if (propertyName.isNotEmpty) {
-          final value = jsonData[key] as String? ?? '';
-          assetPathsClass..writeln("          '$key': '''$value''',");
+        assetPathsClass.writeln("        '$fileKey': {");
+        final jsonData = json[fileKey] as Map<String, dynamic>;
+        for (final key in jsonData.keys) {
+          final propertyName = _convertCamelPropertyName(key);
+
+          if (propertyName.isNotEmpty) {
+            final value = jsonData[key] as String? ?? '';
+            assetPathsClass..writeln("          '$key': '''$value''',");
+          }
         }
+        assetPathsClass.writeln('        },');
       }
 
       assetPathsClass
-        ..writeln('        },')
         ..writeln('      };')
         ..writeln(ignoreForFile)
         ..writeln('}');
@@ -276,18 +292,31 @@ class AssetsBuilder extends Builder {
     return assetPathsClass.toString();
   }
 
-  Future<dynamic> _findAllLocalizationKeysList(
-      BuildStep buildStep, YamlMap pubspecYamlMap) async {
-    const folder = 'assets/localizations/vi.json';
-    final file = File(folder);
-    if (file.existsSync()) {
-      final jsonContent = file.readAsStringSync();
-      if (jsonContent.isNotEmpty) {
-        final dynamic jsonData = jsonDecode(jsonContent);
-        return jsonData;
-      }
-    }
-    return null;
+  Future<List<Map<String, dynamic>>> _findAllLocalizationKeysList(
+    BuildStep buildStep,
+    YamlMap pubspecYamlMap,
+    _AssetsScannerOptions options,
+  ) async {
+    final folder = options.localization;
+    final mapList = Directory(folder)
+        .listSync()
+        .where((file) =>
+            path.extension(file.path).toLowerCase() == 'json' &&
+            file.existsSync())
+        .map<Map<String, dynamic>?>((file) {
+          final jsonContent = File(file.path).readAsStringSync();
+          final fileName = file.path.split('/').last.split('.').first;
+          if (jsonContent.isNotEmpty) {
+            final dynamic jsonData = jsonDecode(jsonContent);
+            if (jsonData is Map<String, dynamic>) {
+              return <String, dynamic>{fileName: jsonData};
+            }
+          }
+          return null;
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    return mapList;
   }
 
   Future<String> _generateRFileContent(BuildStep buildStep,
@@ -395,7 +424,7 @@ class AssetsBuilder extends Builder {
         final propertyName = _createPropertyName(assetPath);
         if (propertyName.isNotEmpty) {
           if (!options.ignoreComment) {
-            assetPathsClass.writeln('  /// ![](${p.absolute(assetPath)})');
+            assetPathsClass.writeln('  /// ![](${path.absolute(assetPath)})');
           }
           assetPathsClass
             ..writeln('  static const $propertyName = \'$assetPath\';')
@@ -403,7 +432,9 @@ class AssetsBuilder extends Builder {
         }
       }
 
-      assetPathsClass..writeln(ignoreForFile)..writeln('}');
+      assetPathsClass
+        ..writeln(ignoreForFile)
+        ..writeln('}');
     }
 
     return assetPathsClass.toString();
@@ -461,7 +492,9 @@ class AssetsBuilder extends Builder {
             ..writeln('  static const $propertyName = \'$assetPath\';')
             ..writeln();
         });
-        packageAssetPathsClass..writeln(ignoreForFile)..writeln('}');
+        packageAssetPathsClass
+          ..writeln(ignoreForFile)
+          ..writeln('}');
       });
     }
 
