@@ -201,7 +201,6 @@ class AssetsBuilder extends Builder {
       final jsonData = jsonList.first;
       // Create default asset paths class.
       assetPathsClass
-        ..writeln("import 'package:get/get.dart';")
         ..writeln()
         ..writeln('class LocaleKeys {');
 
@@ -209,8 +208,7 @@ class AssetsBuilder extends Builder {
         final propertyName = _convertCamelPropertyName(key);
 
         if (propertyName.isNotEmpty) {
-          assetPathsClass
-              .writeln('  static const $propertyName = \'$key\'.tr;');
+          assetPathsClass.writeln('  static const $propertyName = \'$key\';');
         }
       }
 
