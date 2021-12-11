@@ -29,7 +29,7 @@ class _AssetsScannerOptions {
     this.path = 'lib',
     this.className = 'R',
     this.ignoreComment = false,
-    this.localization = 'assets/localizations',
+    this.localization = '',
   });
   factory _AssetsScannerOptions() => const _AssetsScannerOptions._();
   factory _AssetsScannerOptions.fromYamlMap(YamlMap map) {
@@ -37,8 +37,7 @@ class _AssetsScannerOptions {
         path: map['path'] as String? ?? 'lib',
         className: map['className'] as String? ?? 'R',
         ignoreComment: map['ignoreComment'] as bool? ?? false,
-        localization:
-            map['localizations'] as String? ?? 'assets/localizations');
+        localization: map['localizations'] as String? ?? '');
   }
 
   /// The path where the `r.dart` file locate. Note that the `path` should be
@@ -138,6 +137,10 @@ class AssetsBuilder extends Builder {
     final output = AssetId(buildStep.inputId.package, path.join(dir, 'r.dart'));
     if (rClass.isNotEmpty) {
       await buildStep.writeAsString(output, rClass);
+    }
+
+    if (options.localization.isEmpty) {
+      return;
     }
     final jsonList =
         await _findAllLocalizationKeysList(buildStep, pubspecYamlMap, options);
@@ -298,14 +301,28 @@ class AssetsBuilder extends Builder {
     _AssetsScannerOptions options,
   ) async {
     final folder = options.localization;
-    final mapList = Directory(folder)
+    final directory = Directory(folder);
+    print('current dictory: ${Directory.current}');
+    if (!directory.existsSync()) {
+      print('No such folder $folder');
+      return [];
+    }
+
+    print('start mapping json data');
+    final mapList = directory
         .listSync()
+        .map((e) {
+          print(
+              'start mapping file $e ${path.extension(e.path).toLowerCase()}');
+          return e;
+        })
         .where((file) =>
-            path.extension(file.path).toLowerCase() == 'json' &&
+            path.extension(file.path).toLowerCase() == '.json' &&
             file.existsSync())
         .map<Map<String, dynamic>?>((file) {
           final jsonContent = File(file.path).readAsStringSync();
           final fileName = file.path.split('/').last.split('.').first;
+          print('mapping file $fileName');
           if (jsonContent.isNotEmpty) {
             final dynamic jsonData = jsonDecode(jsonContent);
             if (jsonData is Map<String, dynamic>) {

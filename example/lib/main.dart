@@ -42,13 +42,13 @@ class MyApp extends StatelessWidget {
             child: Column(
               children: <Widget>[
                 const Image(
-                  image: AssetImage(R.alarm_white),
+                  image: AssetImage(R.alarmWhite),
                 ),
                 const Image(
-                  image: AssetImage(R.baseline_3d_rotation_white),
+                  image: AssetImage(R.baseline3dRotationWhite),
                 ),
                 const Image(
-                  image: AssetImage(R.arrow_right_alt_white),
+                  image: AssetImage(R.arrowRightAltWhite),
                 ),
               ],
             ),
