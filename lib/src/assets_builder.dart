@@ -31,7 +31,9 @@ class _AssetsScannerOptions {
     this.ignoreComment = false,
     this.localization = '',
   });
+
   factory _AssetsScannerOptions() => const _AssetsScannerOptions._();
+
   factory _AssetsScannerOptions.fromYamlMap(YamlMap map) {
     return _AssetsScannerOptions._(
         path: map['path'] as String? ?? 'lib',
@@ -322,7 +324,8 @@ class AssetsBuilder extends Builder {
             file.existsSync())
         .map<Map<String, dynamic>?>((file) {
           final jsonContent = File(file.path).readAsStringSync();
-          final fileName = file.path.split('/').last.split('.').first;
+          final fileName =
+              file.path.split(RegExp(r'/|\\')).last.split('.').first;
           print('mapping file $fileName');
           if (jsonContent.isNotEmpty) {
             final dynamic jsonData = jsonDecode(jsonContent);
