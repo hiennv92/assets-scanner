@@ -583,7 +583,14 @@ class AssetsBuilder extends Builder {
             })
             .map((e) => AssetId('', e.path))
             .toList();
-        assets.addAll(listFiles);
+
+        for (final file in listFiles) {
+          if (!assetsSet.any((element) =>
+              _createPropertyName(element.path) ==
+              _createPropertyName(file.path))) {
+            assetsSet.add(file);
+          }
+        }
       }
       assetsSet.addAll(assets);
     }
